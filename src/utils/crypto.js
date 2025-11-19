@@ -1,11 +1,3 @@
-/*
-  File: crypto.js
-  Update: 
-  - PERBAIKAN BESAR: Menulis ulang fungsi 'LSB.bitsToMessage'
-    karena logika pembacaan bit sebelumnya salah total.
-  - Mempertahankan perbaikan transparansi (alpha=255) di 'LSB.hideBitsInPixels'.
-*/
-
 import CryptoJS from 'crypto-js';
 
 const RC4_KEY = 'mysecretkey';
@@ -68,7 +60,7 @@ export const loadData = async () => {
 // Algoritma Database: Triple DES
 // ===================================
 const tripleDesEncrypt = (key, data) => {
-  const iv = CryptoJS.lib.WordArray.random(8); // IV 8 byte untuk 3DES
+  const iv = CryptoJS.lib.WordArray.random(8);
   const encrypted = CryptoJS.TripleDES.encrypt(data, key, {
     iv: iv,
     padding: CryptoJS.pad.Pkcs7,
@@ -79,7 +71,7 @@ const tripleDesEncrypt = (key, data) => {
 
 const tripleDesDecrypt = (key, combinedHex) => {
   try {
-    const iv = CryptoJS.enc.Hex.parse(combinedHex.substring(0, 16)); // 16 char hex = 8 bytes
+    const iv = CryptoJS.enc.Hex.parse(combinedHex.substring(0, 16));
     const ciphertext = CryptoJS.enc.Hex.parse(combinedHex.substring(16));
     const decrypted = CryptoJS.TripleDES.decrypt({ ciphertext: ciphertext }, key, {
       iv: iv,
@@ -115,6 +107,7 @@ export const decryptAgentDetails = (desKey, encryptedDataHex) => {
 // ===================================
 // Algoritma Teks Super: Caesar + RC4
 // ===================================
+// Helper: Caesar Cipher
 export const caesarCipher = (text, shift) => {
   let encryptedText = '';
   for (let i = 0; i < text.length; i++) {
@@ -130,6 +123,7 @@ export const caesarCipher = (text, shift) => {
   return encryptedText;
 };
 
+// Helper: RC4 Cipher
 export const rc4Encrypt = (key, text) => {
   let S = Array.from(Array(256).keys());
   let j = 0;
@@ -150,16 +144,29 @@ export const rc4Encrypt = (key, text) => {
 };
 
 export const encryptSuperTeks = (text) => {
-  const caesar = caesarCipher(text, 3);
+
+  const safeInputBase64 = CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(text));
+
+  // 2. Jalankan Algoritma Kustom (Caesar -> RC4)
+  const caesar = caesarCipher(safeInputBase64, 3);
   const rc4 = rc4Encrypt(RC4_KEY, caesar);
-  return CryptoJS.enc.Base64.stringify(CryptoJS.enc.Utf8.parse(rc4));
+
+
+  return CryptoJS.enc.Base64.stringify(CryptoJS.enc.Latin1.parse(rc4));
 };
 
-export const decryptSuperTeks = (base64Text) => {
-  const rc4 = CryptoJS.enc.Utf8.stringify(CryptoJS.enc.Base64.parse(base64Text));
-  const caesar = rc4Encrypt(RC4_KEY, rc4); // RC4 simetris
-  return caesarCipher(caesar, -3);
+export const decryptSuperTeks = (base64Cipher) => {
+  try {
+    const rc4Text = CryptoJS.enc.Latin1.stringify(CryptoJS.enc.Base64.parse(base64Cipher));
+    const caesarText = rc4Encrypt(RC4_KEY, rc4Text);
+    const originalBase64 = caesarCipher(caesarText, -3);
+    return CryptoJS.enc.Utf8.stringify(CryptoJS.enc.Base64.parse(originalBase64));
+  } catch (e) {
+    console.error("Gagal dekripsi SuperTeks:", e);
+    return "[Gagal Dekripsi: Format Data Rusak]";
+  }
 };
+
 
 // ===================================
 // Algoritma File: AES-CBC (128-bit)
@@ -210,15 +217,13 @@ export const LSB = {
       let charCode = message.charCodeAt(i);
       output += charCode.toString(2).padStart(16, '0');
     }
-    output += '0'.repeat(16); // Terminator
+    output += '0'.repeat(16); 
     return output;
   },
 
-  // ===== FUNGSI YANG DIPERBAIKI TOTAL =====
   bitsToMessage: (pixels) => {
     let bitStream = '';
-    
-    // 1. Kumpulkan SEMUA bit LSB dari R, G, B
+    // Kumpulkan SEMUA bit LSB dari R, G, B
     for (let i = 0; i < pixels.length; i += 4) {
        bitStream += (pixels[i] & 1).toString();
        bitStream += (pixels[i + 1] & 1).toString();
@@ -226,27 +231,22 @@ export const LSB = {
     }
     
     let message = '';
-    
-    // 2. Proses bit stream per 16-bit character
+    // Proses bit stream per 16-bit character
     for (let j = 0; j + 16 <= bitStream.length; j += 16) {
       let charBits = bitStream.substring(j, j + 16);
       let charCode = parseInt(charBits, 2);
       
-      if (charCode === 0) { // Terminator
-        return message; // Selesai
+      if (charCode === 0) { 
+        return message; 
       }
-      
       message += String.fromCharCode(charCode);
     }
-    
-    return message; // Jika tidak ada terminator (seharusnya tidak terjadi jika encoding benar)
+    return message;
   },
-  // ===== AKHIR FUNGSI YANG DIPERBAIKI =====
 
   hideBitsInPixels: (pixels, bits) => {
     let bitIndex = 0;
     for (let i = 0; i < pixels.length; i += 4) {
-      
       if (bitIndex < bits.length)
         pixels[i] = (pixels[i] & 0xFE) | parseInt(bits[bitIndex++], 2);
       
@@ -256,13 +256,7 @@ export const LSB = {
       if (bitIndex < bits.length)
         pixels[i + 2] = (pixels[i + 2] & 0xFE) | parseInt(bits[bitIndex++], 2);
 
-      // Perbaikan transparansi (tetap dipertahankan)
       pixels[i + 3] = 255; 
-
-      if (bitIndex >= bits.length) {
-         // Jika pesan selesai, kita tetap perlu membuat sisa gambar opaque
-         // jadi loop berlanjut, tapi tidak menulis LSB lagi.
-      }
     }
     return pixels;
   }

@@ -1,11 +1,3 @@
-/*
-  File: Admin.jsx
-  Deskripsi: Portal Staf Medis (Dokter)
-  Update: 
-  - Fungsi handleFileDecrypt diubah untuk generate "Nota Resep" (seperti Agent.jsx)
-  - PDF Nota Resep sekarang mengambil 'umur' pasien dari state.
-*/
-
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext'; 
 import * as Crypto from '../utils/crypto'; 
@@ -14,10 +6,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import jsPDF from 'jspdf';
 import CryptoJS from 'crypto-js';
 
-// --- PENTING: Import logo untuk PDF ---
-// Pastikan path ini benar dan bundler Anda (seperti Vite) 
-// dapat memproses impor gambar ini.
-import logoForPdf from '../assets/logo2.png'; // Ganti dari 'src/assets/logo2.png'
+
+import logoForPdf from '../assets/logo2.png'; 
 
 
 // --- Ikon (Sama seperti sebelumnya) ---
@@ -32,7 +22,7 @@ const TrashIcon = () => ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" vi
 
 const LogoMediSafe = () => (
 <img 
-  src={logoForPdf} // <-- DIPERBAIKI: Menggunakan var import
+  src={logoForPdf} 
   alt="Logo MediSafe"
   className="w-20 h-20 mx-auto" 
 />
@@ -136,15 +126,21 @@ export default function Admin() {
 
   // --- HANDLER TAB 1: RESEP ---
   const handleEncryptPreview = () => { 
-    if (!recipeDetails || !recipeDosis) { 
-        alert('Isi Dosis dan Detail Resep.'); 
-        return; 
-    }
-    const encryptedRC4 = Crypto.encryptSuperTeks(recipeDosis);
-    setEncryptedRecipeRC4(encryptedRC4);
-    
-    const encryptedAES = Crypto.aesEncryptText(aesKey, recipeDetails);
-    setEncryptedRecipeAES(encryptedAES);
+      if (!recipeDetails || !recipeDosis) { 
+          alert('Isi Dosis dan Detail Resep.'); 
+          return; 
+      }
+      try {
+          
+          const encryptedRC4 = Crypto.encryptSuperTeks(recipeDosis);
+          setEncryptedRecipeRC4(encryptedRC4);
+          
+          const encryptedAES = Crypto.aesEncryptText(aesKey, recipeDetails);
+          setEncryptedRecipeAES(encryptedAES);
+      } catch (error) {
+          console.error(error);
+          alert("Terjadi kesalahan saat enkripsi. Coba kurangi panjang teks.");
+      }
   };
   
   const handleSaveRecipe = () => { 
@@ -272,7 +268,7 @@ export default function Admin() {
 
     try {
       const payload = {
-        filename: `Resep_${cleanPatientName}.txt`, // Nama file internal
+        filename: `Resep_${cleanPatientName}.txt`, 
         mimeType: 'text/plain',
         data: encryptedRecipeAES 
       };
@@ -281,7 +277,7 @@ export default function Admin() {
       const href = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = href;
-      // Nama file yang di-download (ekstensi .pdf agar mudah dibuka Agent/Admin)
+   
       link.download = `resep_terenkripsi_${cleanPatientName}.pdf`; 
       document.body.appendChild(link);
       link.click();
@@ -303,7 +299,7 @@ export default function Admin() {
     setDownloadFilename('');
   };
   
-  // === FUNGSI DEKRIPSI (Buka Dokumen) - DIPERBARUI ===
+  // === FUNGSI DEKRIPSI (Buka Dokumen) 
   const handleFileDecrypt = () => {
     if (!selectedFile || !aesKey) {
       alert('Silakan pilih file terenkripsi (.pdf) untuk didekripsi.');
@@ -341,17 +337,16 @@ export default function Admin() {
             }
 
             // --- MULAI TAMPILAN NOTA RESEP PDF ---
-            
-            // Ekstrak nama pasien dari filename (Contoh: "Resep_John_Doe.txt")
+          
             const nameMatch = payload.filename.match(/^Resep_(.*)\.txt$/);
             const cleanPatientName = (nameMatch && nameMatch[1]) ? nameMatch[1] : "Pasien";
             const patientName = cleanPatientName.replace(/_/g, ' '); // Ganti underscore jadi spasi
 
-            // --- PERUBAHAN DI SINI ---
+           
             // Cari pasien di state 'patientList' untuk mendapatkan umurnya
             const patientFromList = patientList.find(p => p.name === patientName);
             const patientAge = patientFromList ? (patientFromList.age || '-') : '-';
-            // --- AKHIR PERUBAHAN ---
+
 
             const doc = new jsPDF();
             const tglHariIni = new Date().toLocaleDateString('id-ID', {
@@ -530,12 +525,35 @@ export default function Admin() {
             </div>
             
             {/* PANEL 4: QR CODE & KIRIM */}
-            <div className="bg-white p-6 rounded-lg shadow-lg space-y-4">
+           <div className="bg-white p-6 rounded-lg shadow-lg space-y-4">
               <h2 className="text-2xl font-bold text-gray-900 flex items-center"><QrCodeIcon /> Bagikan Resep ke Pasien</h2>
               <p className="text-sm text-gray-600">Pindai QR ini untuk Dosis (RC4) atau klik tombol di bawah.</p>
-              <div className="w-full flex justify-center items-center bg-gray-50 p-4 rounded-lg border min-h-[200px]">
-                {qrData ? (<QRCodeSVG value={qrData} size={180} level={"L"} className="w-full max-w-[180px] h-auto"/>) : (<p className="text-gray-500">Generate resep di Panel 1.</p>)}
+              
+              <div className="w-full flex flex-col justify-center items-center bg-gray-50 p-4 rounded-lg border min-h-[200px]">
+                
+                {qrData ? (
+                    qrData.length > 2000 ? (
+                       
+                        <div className="text-center text-red-500">
+                            <p className="font-bold text-xl mb-2">⚠️ Data Terlalu Panjang!</p>
+                            <p className="text-sm">QR Code tidak dapat memuat teks sepanjang ini ({qrData.length} karakter).</p>
+                            <p className="text-xs mt-2 text-gray-600">Gunakan fitur "Kirim Resep" atau "Download File" saja.<br/>QR Code hanya untuk instruksi singkat.</p>
+                        </div>
+                    ) : (
+                      
+                        <QRCodeSVG 
+                            value={qrData} 
+                            size={180} 
+                            level={"L"} 
+                            includeMargin={true}
+                            className="w-full max-w-[180px] h-auto"
+                        />
+                    )
+                ) : (
+                    <p className="text-gray-500">Generate resep di Panel 1.</p>
+                )}
               </div>
+
               <div className="flex gap-4">
                 <button onClick={handleSendToPatient} className="w-1/2 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">Kirim Resep ke Pasien</button>
                 <button onClick={handleDownloadEncryptedRecipeFile} className="w-1/2 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700">Download (File .pdf AES)</button>
@@ -656,13 +674,12 @@ export default function Admin() {
     }
   };
 
-  // --- JSX UTAMA ---
+  
   return (
     <div className="bg-gray-100 min-h-screen font-['Poppins']">
       <Navbar />
       <canvas ref={canvasRef} className="hidden"></canvas>
-      
-      {/* --- Navigasi Tab --- */}
+   
       <div className="container mx-auto p-4 md:px-8 pt-6">
         <div className="flex flex-wrap space-x-1 bg-blue-600 p-1 rounded-lg shadow-md">
           <button
@@ -703,7 +720,7 @@ export default function Admin() {
         </div>
       </div>
 
-      {/* --- Konten Tab --- */}
+  
       <div className="container mx-auto p-4 md:p-8">
         {renderContent()}
       </div>
